@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; connect-src 'none'; img-src 'self' data:; frame-src 'none'; object-src 'none';">
+  <title>Zentry One - Gestor de Credenciales Seguro</title>
+  <!-- Google Fonts: Inter para UI, JetBrains Mono para contraseñas -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Hoja de Estilo Principal -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Alerta / Notificación Flotante (Toast) -->
+  <div id="toast" class="toast hidden">
+    <div class="toast-content">
+      <i data-lucide="check-circle" class="toast-icon"></i>
+      <span id="toast-message">Mensaje de notificación</span>
+    </div>
+    <div id="toast-progress" class="toast-progress"></div>
+  </div>
+
+  <!-- PANTALLA DE DESBLOQUEO / CONFIGURACIÓN INICIAL (ZENTRY ONE AUTH) -->
+  <div id="unlock-container" class="unlock-container">
+    <div class="unlock-card glass">
+      <div class="unlock-logo">
+        <div class="logo-shield" style="background: linear-gradient(135deg, var(--primary), var(--primary-glow));">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="logo-icon-pulse" style="width: 32px; height: 32px; color: #fff;">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9 17V9a3 3 0 0 1 6 0v8" />
+            <circle cx="12" cy="13" r="1.5" fill="currentColor" />
+          </svg>
+        </div>
+        <h1>Zentry One</h1>
+        <p id="unlock-subtitle">Gestor de credenciales Zero-Knowledge</p>
+      </div>
+
+      <!-- Alerta de Migración de Base de Datos Antigua -->
+      <div id="migration-alert-box" class="dashboard-alert-box hidden" style="margin-bottom: 20px; border-color: var(--success); background-color: var(--success-glow); padding: 10px 14px;">
+        <div class="alert-content" style="font-size: 12px; line-height: 1.4;">
+          <i data-lucide="info" style="color: var(--success); width: 16px; height: 16px; flex-shrink: 0;"></i>
+          <span><strong>Bóveda antigua detectada:</strong> Al registrar tu primer usuario, tus cuentas anteriores se migrarán automáticamente.</span>
+        </div>
+      </div>
+
+      <!-- PANEL 1: INICIO DE SESIÓN (LOGIN) -->
+      <div id="auth-login-panel">
+        <form id="auth-login-form" class="unlock-form">
+          <div class="input-group">
+            <label for="auth-login-username">Usuario</label>
+            <input type="text" id="auth-login-username" placeholder="Ingresa tu usuario" maxlength="15" required autocomplete="username">
+          </div>
+          <div class="input-group">
+            <label for="auth-login-password">Contraseña Maestra</label>
+            <div class="password-wrapper">
+              <input type="password" id="auth-login-password" placeholder="Ingresa tu contraseña" required autocomplete="current-password">
+              <button type="button" id="toggle-login-password" class="icon-btn">
+                <i data-lucide="eye"></i>
+              </button>
+            </div>
+          </div>
+          <button type="submit" id="btn-auth-login" class="btn btn-primary btn-full" style="margin-top: 8px;">
+            <i data-lucide="unlock"></i> Iniciar Sesión
+          </button>
+        </form>
+        <div style="display: flex; justify-content: space-between; margin-top: 20px; font-size: 13px;">
+          <button type="button" id="btn-go-to-register" class="btn-text" style="color: var(--primary-hover); font-weight: 500;">Crear cuenta nueva</button>
+          <button type="button" id="btn-go-to-recovery" class="btn-text" style="color: var(--text-muted);">¿Olvidaste tu contraseña?</button>
+        </div>
+      </div>
+
+      <!-- PANEL 2: REGISTRO DE USUARIOS -->
+      <div id="auth-register-panel" class="hidden">
+        <form id="auth-register-form" class="unlock-form">
+          <div class="input-group">
+            <label for="auth-register-username">Nombre de Usuario</label>
+            <input type="text" id="auth-register-username" placeholder="Ej. luis, admin, ti" maxlength="15" required autocomplete="off" pattern="^[a-zA-Z0-9_-]{3,15}$" title="De 3 a 15 caracteres alfanuméricos, guion o guion bajo.">
+          </div>
+          <div class="input-group">
+            <label for="auth-register-password">Contraseña Maestra</label>
+            <div class="password-wrapper">
+              <input type="password" id="auth-register-password" placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
+              <button type="button" id="toggle-register-password" class="icon-btn has-generator">
+                <i data-lucide="eye"></i>
+              </button>
+              <button type="button" id="btn-toggle-register-generator" class="btn btn-secondary btn-icon-only tooltip" title="Generar Contraseña Maestra">
+                <i data-lucide="wand-2"></i>
+              </button>
+            </div>
+            <div id="register-strength-bar" class="strength-bar"><div></div></div>
+            <span id="register-strength-text" class="strength-text">Fuerza de contraseña</span>
+
+            <!-- GENERADOR DE CONTRASEÑA MAESTRA INTEGRADO (Sección Colapsable) -->
+            <div id="register-generator-panel" class="generator-panel hidden" style="margin-top: 12px; margin-bottom: 4px;">
+              <h4 style="font-size: 11px;">Generador de Contraseña Maestra</h4>
+              
+              <div class="gen-output-group" style="padding: 6px 12px; min-height: 38px;">
+                <span id="register-gen-password-preview" class="password-font" style="font-size: 13px;">Contraseña Generada</span>
+                <div class="gen-output-actions">
+                  <button type="button" id="btn-register-regenerate-password" class="icon-btn tooltip" title="Generar otra contraseña" style="padding: 4px;">
+                    <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+                  </button>
+                  <button type="button" id="btn-register-use-gen-password" class="btn btn-success btn-sm" style="padding: 4px 10px; font-size: 11px; height: 26px;">
+                    Aplicar
+                  </button>
+                </div>
+              </div>
+
+              <div class="gen-controls" style="gap: 8px;">
+                <div class="gen-range-group">
+                  <label for="register-gen-length" style="font-size: 11px;">Longitud: <span id="register-gen-length-val">16</span> caracteres</label>
+                  <input type="range" id="register-gen-length" min="8" max="32" value="16">
+                </div>
+
+                <div class="gen-checkbox-grid" style="grid-template-columns: 1fr 1fr; gap: 8px;">
+                  <label class="checkbox-container" style="font-size: 11px; margin-bottom: 0;">
+                    <input type="checkbox" id="register-gen-upper" checked>
+                    <span class="checkmark" style="width: 16px; height: 16px;"></span>
+                    Mayúsculas
+                  </label>
+                  <label class="checkbox-container" style="font-size: 11px; margin-bottom: 0;">
+                    <input type="checkbox" id="register-gen-lower" checked>
+                    <span class="checkmark" style="width: 16px; height: 16px;"></span>
+                    Minúsculas
+                  </label>
+                  <label class="checkbox-container" style="font-size: 11px; margin-bottom: 0;">
+                    <input type="checkbox" id="register-gen-numbers" checked>
+                    <span class="checkmark" style="width: 16px; height: 16px;"></span>
+                    Números
+                  </label>
+                  <label class="checkbox-container" style="font-size: 11px; margin-bottom: 0;">
+                    <input type="checkbox" id="register-gen-symbols" checked>
+                    <span class="checkmark" style="width: 16px; height: 16px;"></span>
+                    Símbolos
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="auth-register-confirm">Confirmar Contraseña Maestra</label>
+            <input type="password" id="auth-register-confirm" placeholder="Repite la contraseña" required autocomplete="new-password">
+          </div>
+          <button type="submit" id="btn-auth-register" class="btn btn-success btn-full" style="margin-top: 8px;">
+            <i data-lucide="user-plus"></i> Registrar Usuario
+          </button>
+        </form>
+        <div style="text-align: center; margin-top: 20px; font-size: 13px;">
+          <button type="button" id="btn-go-to-login-from-reg" class="btn-text" style="color: var(--text-muted);">Volver al inicio de sesión</button>
+        </div>
+      </div>
+
+      <!-- PANEL 3: RECUPERACIÓN DE CUENTA -->
+      <div id="auth-recovery-panel" class="hidden">
+        <form id="auth-recovery-form" class="unlock-form">
+          <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.5; margin-bottom: 16px;">
+            Ingresa tu usuario y tu Clave de Recuperación de Emergencia. Si es válida, podrás restablecer tu Contraseña Maestra y recuperar el acceso a tus credenciales.
+          </p>
+          <div class="input-group">
+            <label for="auth-recovery-username">Nombre de Usuario</label>
+            <input type="text" id="auth-recovery-username" placeholder="Nombre de tu cuenta" maxlength="15" required autocomplete="username">
+          </div>
+          <div class="input-group">
+            <label for="auth-recovery-key">Clave de Recuperación</label>
+            <input type="text" id="auth-recovery-key" placeholder="ZENT-XXXX-XXXX-XXXX-XXXX" required autocomplete="off" style="font-family: var(--font-mono); text-transform: uppercase;">
+          </div>
+          <div class="input-group">
+            <label for="auth-recovery-new-password">Nueva Contraseña Maestra</label>
+            <div class="password-wrapper">
+              <input type="password" id="auth-recovery-new-password" placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
+              <button type="button" id="toggle-recovery-password" class="icon-btn">
+                <i data-lucide="eye"></i>
+              </button>
+            </div>
+          </div>
+          <button type="submit" id="btn-auth-recovery" class="btn btn-primary btn-full" style="margin-top: 8px;">
+            <i data-lucide="refresh-cw"></i> Restablecer y Acceder
+          </button>
+        </form>
+        <div style="text-align: center; margin-top: 20px; font-size: 13px;">
+          <button type="button" id="btn-go-to-login-from-rec" class="btn-text" style="color: var(--text-muted);">Volver al inicio de sesión</button>
+        </div>
+      </div>
+
+      <!-- PANEL 4: MUESTRA DE CLAVE DE RECUPERACIÓN GENERADA (TRAS REGISTRO EXITOSO) -->
+      <div id="recovery-key-display-panel" class="hidden" style="text-align: center;">
+        <div style="margin-bottom: 20px;">
+          <i data-lucide="shield-check" class="welcome-icon" style="color: var(--success); width: 44px; height: 44px; display: inline-block;"></i>
+          <h3 style="margin-top: 8px; font-size: 18px;">¡Usuario Creado con Éxito!</h3>
+          <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.5; margin-top: 6px;">
+            Esta es tu <strong>Clave de Recuperación de Emergencia</strong>. Si olvidas tu contraseña maestra, esta clave es el único método para recuperar tus datos. <strong>Anótala en un lugar seguro. No se puede volver a mostrar.</strong>
+          </p>
+        </div>
+        
+        <div class="field-value-group" style="margin-bottom: 20px; background-color: var(--bg-input); border: 1px solid var(--success); justify-content: center; padding: 12px; min-height: 48px;">
+          <span id="generated-recovery-key-text" class="password-font" style="font-size: 14px; font-weight: 600; color: #fff; letter-spacing: 0.05em; user-select: all;">ZENT-XXXX-XXXX-XXXX-XXXX</span>
+          <button type="button" id="btn-copy-generated-recovery-key" class="icon-btn tooltip" title="Copiar Clave" style="margin-left: 8px;">
+            <i data-lucide="copy" style="color: var(--success); width: 16px; height: 16px;"></i>
+          </button>
+        </div>
+        
+        <button type="button" id="btn-ack-recovery-key" class="btn btn-success btn-full">
+          <i data-lucide="check"></i> He guardado la clave, entrar
+        </button>
+      </div>
+
+      <div class="unlock-footer" style="margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+        <button id="btn-reset-vault-unlock" class="btn-text btn-danger-text" style="font-size: 12px;">
+          <i data-lucide="refresh-cw" style="width: 12px; height: 12px;"></i> Restablecer por completo la aplicación
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLERO PRINCIPAL (DASHBOARD) -->
+  <div id="app-container" class="app-container hidden">
+    
+    <!-- COLUMNA 1: SIDEBAR / NAVEGACIÓN -->
+    <aside class="sidebar glass">
+      <div class="sidebar-header">
+        <div class="brand">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="brand-icon" style="width: 22px; height: 22px; flex-shrink: 0; color: var(--primary);">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9 17V9a3 3 0 0 1 6 0v8" />
+            <circle cx="12" cy="13" r="1.5" fill="currentColor" />
+          </svg>
+          <span>Zentry One</span>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button id="btn-toggle-theme" class="icon-btn tooltip" title="Cambiar Tema (Claro / Oscuro)">
+            <i data-lucide="sun" style="width: 16px; height: 16px;"></i>
+          </button>
+          <button id="btn-lock-vault" class="icon-btn tooltip" title="Bloquear Bóveda">
+            <i data-lucide="lock" style="width: 16px; height: 16px;"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="workspace-selector-container">
+        <label for="workspace-select">Espacio de Trabajo</label>
+        <div class="workspace-select-wrapper">
+          <select id="workspace-select">
+            <!-- Dinámico -->
+          </select>
+          <button id="btn-manage-workspaces" class="icon-btn tooltip" title="Administrar Espacios">
+            <i data-lucide="settings"></i>
+          </button>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-section-title">Resumen</div>
+        <ul id="dashboard-menu" style="list-style: none; display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px;">
+          <li id="btn-nav-dashboard" class="active" style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all var(--transition-fast);">
+            <i data-lucide="shield" style="width: 18px; height: 18px;"></i> <span>Auditoría de Seguridad</span>
+          </li>
+        </ul>
+        <div class="nav-section-title" style="display: flex; justify-content: space-between; align-items: center; padding-right: 8px;">
+          <span>Categorías</span>
+          <button id="btn-manage-categories" class="icon-btn tooltip" title="Administrar Categorías" style="padding: 2px;">
+            <i data-lucide="settings" style="width: 14px; height: 14px;"></i>
+          </button>
+        </div>
+        <ul id="category-filters">
+          <li data-category="all">
+            <i data-lucide="folder"></i> <span>Todas las Cuentas</span>
+            <span class="badge" id="badge-all">0</span>
+          </li>
+          <!-- Las categorías dinámicas se inyectarán aquí -->
+        </ul>
+      </nav>
+
+      <div class="sidebar-shortcuts">
+        <div class="nav-section-title">Atajos de Teclado</div>
+        <div class="shortcut-list">
+          <div class="shortcut-item"><span>Buscar</span> <kbd>/</kbd> o <kbd>Ctrl+F</kbd></div>
+          <div class="shortcut-item"><span>Bloquear</span> <kbd>Esc</kbd></div>
+          <div class="shortcut-item"><span>Nuevo</span> <kbd>N</kbd></div>
+        </div>
+      </div>
+
+      <div class="sidebar-profile">
+        <div class="profile-info">
+          <div class="profile-avatar-wrapper">
+            <i data-lucide="user"></i>
+          </div>
+          <div class="profile-details">
+            <span class="profile-username" id="active-username-display">Usuario</span>
+            <span class="profile-role">Sesión Local</span>
+          </div>
+        </div>
+        <button id="btn-user-panel" class="icon-btn tooltip" title="Configurar Perfil">
+          <i data-lucide="settings-2" style="width: 16px; height: 16px;"></i>
+        </button>
+      </div>
+
+      <div class="sidebar-footer">
+        <button id="btn-export-vault" class="btn-sidebar">
+          <i data-lucide="download"></i> Exportar Bóveda
+        </button>
+        <button id="btn-import-vault-trigger" class="btn-sidebar">
+          <i data-lucide="upload"></i> Importar Bóveda
+        </button>
+        <input type="file" id="import-vault-file" accept=".json" class="hidden">
+        <button id="btn-reset-vault" class="btn-sidebar btn-sidebar-danger">
+          <i data-lucide="trash-2"></i> Eliminar Bóveda
+        </button>
+      </div>
+    </aside>
+
+    <!-- COLUMNA 2: LISTADO DE CUENTAS -->
+    <main class="accounts-column">
+      <div class="accounts-header">
+        <div class="search-bar-container">
+          <i data-lucide="search" class="search-icon"></i>
+          <input type="text" id="search-input" placeholder="Buscar cuentas, URLs o notas...">
+        </div>
+        <button id="btn-add-account" class="btn btn-primary">
+          <i data-lucide="plus"></i> Nueva Cuenta
+        </button>
+      </div>
+
+      <div class="accounts-sub-header">
+        <span id="results-count">0 cuentas encontradas</span>
+      </div>
+
+      <!-- Contenedor dinámico de tarjetas de cuentas -->
+      <div id="accounts-list" class="accounts-list">
+        <!-- Generado dinámicamente -->
+      </div>
+    </main>
+
+    <!-- COLUMNA 3: PANEL DE DETALLES -->
+    <section class="details-column glass">
+      <!-- Estado vacío / Dashboard de Auditoría -->
+      <div id="details-empty-state" class="details-empty-state">
+        <div class="dashboard-container">
+          <div class="dashboard-header">
+            <i data-lucide="shield" class="dashboard-shield-icon"></i>
+            <h2>Auditoría de Seguridad de la Bóveda</h2>
+            <p>Análisis en tiempo real de la seguridad de tus credenciales de infraestructura</p>
+          </div>
+          
+          <div class="dashboard-grid">
+            <div class="dashboard-card" id="dash-card-total">
+              <div class="card-icon-wrapper main"><i data-lucide="folder"></i></div>
+              <div class="card-info">
+                <span class="card-value" id="dash-val-total">0</span>
+                <span class="card-label">Total Cuentas</span>
+              </div>
+            </div>
+            
+            <div class="dashboard-card clickable-dash" id="dash-card-reused">
+              <div class="card-icon-wrapper danger"><i data-lucide="copy"></i></div>
+              <div class="card-info">
+                <span class="card-value text-danger" id="dash-val-reused">0</span>
+                <span class="card-label">Contraseñas Reutilizadas</span>
+              </div>
+            </div>
+
+            <div class="dashboard-card clickable-dash" id="dash-card-weak">
+              <div class="card-icon-wrapper warning"><i data-lucide="alert-triangle"></i></div>
+              <div class="card-info">
+                <span class="card-value text-warning" id="dash-val-weak">0</span>
+                <span class="card-label">Contraseñas Débiles</span>
+              </div>
+            </div>
+
+            <div class="dashboard-card clickable-dash" id="dash-card-expired">
+              <div class="card-icon-wrapper info"><i data-lucide="clock"></i></div>
+              <div class="card-info">
+                <span class="card-value text-info" id="dash-val-expired">0</span>
+                <span class="card-label">Expiradas (>90 días)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-alert-box hidden" id="dash-active-filter-alert">
+            <div class="alert-content">
+              <i data-lucide="filter" class="alert-icon"></i>
+              <span id="dash-filter-message">Mostrando solo cuentas con contraseñas reutilizadas</span>
+            </div>
+            <button type="button" id="btn-clear-dash-filter" class="btn btn-secondary btn-sm">Limpiar Filtro</button>
+          </div>
+
+          <div class="dashboard-recommendations">
+            <h3>Recomendaciones de Seguridad</h3>
+            <ul id="dashboard-rec-list" class="recommendations-list">
+              <!-- Generado dinámicamente -->
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vista de detalles de cuenta -->
+      <div id="details-content" class="details-content hidden">
+        <div class="details-header">
+          <div class="details-title-group">
+            <h2 id="detail-name">Nombre de la Cuenta</h2>
+            <span id="detail-category-badge" class="badge-category">Categoría</span>
+          </div>
+          <div class="details-actions">
+            <button id="btn-edit-account" class="btn btn-secondary">
+              <i data-lucide="edit-3"></i> Editar
+            </button>
+            <button id="btn-delete-account" class="btn btn-danger">
+              <i data-lucide="trash-2"></i> Eliminar
+            </button>
+            <button id="btn-close-details" class="icon-btn tooltip" title="Cerrar detalles y volver a Auditoría">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="details-body">
+          <div class="detail-field">
+            <label>Nombre de Usuario / Correo</label>
+            <div class="field-value-group">
+              <span id="detail-username" class="selectable-text">usuario@dominio.com</span>
+              <button id="btn-copy-username" class="icon-btn tooltip" title="Copiar Usuario">
+                <i data-lucide="copy"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="detail-field">
+            <div class="detail-label-row">
+              <label>Contraseña Actual</label>
+              <span id="detail-password-age" class="password-age-badge"></span>
+            </div>
+            <div class="field-value-group">
+              <span id="detail-password" class="password-font font-blur">••••••••••••••••</span>
+              <button id="btn-toggle-password-visibility" class="icon-btn tooltip" title="Mostrar Contraseña">
+                <i data-lucide="eye"></i>
+              </button>
+              <button id="btn-copy-password" class="icon-btn tooltip" title="Copiar Contraseña">
+                <i data-lucide="copy"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="detail-field">
+            <label>Dirección URL / Enlace</label>
+            <div class="field-value-group">
+              <a href="#" id="detail-url" target="_blank" rel="noopener noreferrer" class="link-url">https://sitio-web.com</a>
+              <button id="btn-visit-url" class="icon-btn tooltip" title="Visitar URL">
+                <i data-lucide="external-link"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- CAMPOS PERSONALIZADOS -->
+          <div class="detail-field hidden" id="detail-custom-fields-wrapper">
+            <label>Campos Personalizados (Infraestructura)</label>
+            <div id="detail-custom-fields-list" class="detail-custom-fields-list">
+              <!-- Generado dinámicamente -->
+            </div>
+          </div>
+
+          <div class="detail-field">
+            <label>Notas y Anotaciones</label>
+            <div id="detail-notes" class="notes-panel selectable-text">Sin notas.</div>
+          </div>
+
+          <!-- BITÁCORA E HISTORIAL -->
+          <div class="history-section">
+            <h3><i data-lucide="history"></i> Bitácora e Historial de Contraseñas</h3>
+            <p class="history-desc">Historial completo de modificaciones y motivos de actualización.</p>
+            <div id="history-list" class="history-list">
+              <!-- Generado dinámicamente -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- MODAL: FORMULARIO CREAR / EDITAR CUENTA -->
+  <div id="account-modal" class="modal-overlay hidden">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h2 id="modal-title">Agregar Nueva Cuenta</h2>
+        <button id="btn-close-modal" class="icon-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <form id="account-form" class="modal-form">
+        <input type="hidden" id="form-account-id">
+        
+        <div class="form-grid">
+          <div class="input-group">
+            <label for="form-name">Nombre / Título <span class="required">*</span></label>
+            <input type="text" id="form-name" placeholder="Ej. Panel Web Hosting, Correo Corporativo" maxlength="50" required>
+          </div>
+
+          <div class="input-group">
+            <label for="form-category">Categoría <span class="required">*</span></label>
+            <select id="form-category" required>
+              <option value="email">Correos</option>
+              <option value="server">Servidores / SSH</option>
+              <option value="db">Bases de Datos</option>
+              <option value="web">Servicios Web</option>
+              <option value="other">Otros / Administrativos</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label for="form-username">Nombre de Usuario / Correo <span class="required">*</span></label>
+            <input type="text" id="form-username" placeholder="Ej. admin, ti@empresa.com" maxlength="100" required>
+          </div>
+
+          <div class="input-group">
+            <label for="form-url">Dirección URL</label>
+            <input type="text" id="form-url" placeholder="Ej. https://admin.empresa.com" maxlength="255">
+          </div>
+
+          <div class="input-group">
+            <label for="form-workspace">Espacio de Trabajo <span class="required">*</span></label>
+            <select id="form-workspace" required>
+              <!-- Generado dinámicamente -->
+            </select>
+          </div>
+
+          <div class="input-group col-span-2">
+            <label for="form-password">Contraseña <span class="required">*</span></label>
+            <div class="password-wrapper">
+              <input type="password" id="form-password" class="password-font" placeholder="Contraseña de acceso" maxlength="128" required>
+              <button type="button" id="toggle-form-password" class="icon-btn has-generator">
+                <i data-lucide="eye"></i>
+              </button>
+              <button type="button" id="btn-toggle-generator" class="btn btn-secondary btn-icon-only tooltip" title="Generador de Contraseñas">
+                <i data-lucide="wand-2"></i>
+              </button>
+            </div>
+            <div id="form-strength-bar" class="strength-bar"><div></div></div>
+            <span id="form-strength-text" class="strength-text">Fuerza de contraseña</span>
+          </div>
+
+          <!-- GENERADOR DE CONTRASEÑAS INTEGRADO (Sección Colapsable) -->
+          <div id="generator-panel" class="generator-panel col-span-2 hidden">
+            <h4>Generador de Contraseñas</h4>
+            
+            <div class="gen-output-group">
+              <span id="gen-password-preview" class="password-font">Contraseña Generada</span>
+              <div class="gen-output-actions">
+                <button type="button" id="btn-regenerate-password" class="icon-btn tooltip" title="Generar otra contraseña">
+                  <i data-lucide="refresh-cw"></i>
+                </button>
+                <button type="button" id="btn-use-gen-password" class="btn btn-success btn-sm">
+                  <i data-lucide="check"></i> Aplicar
+                </button>
+              </div>
+            </div>
+
+            <div class="gen-controls">
+              <div class="gen-range-group">
+                <label for="gen-length">Longitud: <span id="gen-length-val">16</span> caracteres</label>
+                <input type="range" id="gen-length" min="8" max="32" value="16">
+              </div>
+
+              <div class="gen-checkbox-grid">
+                <label class="checkbox-container">
+                  <input type="checkbox" id="gen-upper" checked>
+                  <span class="checkmark"></span>
+                  Mayúsculas (A-Z)
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="gen-lower" checked>
+                  <span class="checkmark"></span>
+                  Minúsculas (a-z)
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="gen-numbers" checked>
+                  <span class="checkmark"></span>
+                  Números (0-9)
+                </label>
+                <label class="checkbox-container">
+                  <input type="checkbox" id="gen-symbols" checked>
+                  <span class="checkmark"></span>
+                  Símbolos (!@#$...)
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- CAMPOS PERSONALIZADOS FORMULARIO -->
+          <div class="input-group col-span-2 custom-fields-section">
+            <div class="custom-fields-header">
+              <label>Campos Personalizados (TI)</label>
+              <button type="button" id="btn-add-custom-field" class="btn btn-secondary btn-sm">
+                <i data-lucide="plus"></i> Agregar Campo
+              </button>
+            </div>
+            <div id="form-custom-fields-container" class="custom-fields-container">
+              <!-- Filas dinámicas -->
+            </div>
+          </div>
+
+          <div class="input-group col-span-2">
+            <label for="form-notes">Notas / Anotaciones</label>
+            <textarea id="form-notes" rows="4" placeholder="Agrega direcciones IP, puertos, claves alternativas o cualquier anotación útil de infraestructura..." maxlength="1000"></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="btn-cancel-modal" class="btn btn-secondary">Cancelar</button>
+          <button type="submit" id="btn-save-account" class="btn btn-primary">Guardar Cuenta</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: SOLICITUD DE MOTIVO DE ACTUALIZACIÓN (Requerido al cambiar contraseña) -->
+  <div id="reason-modal" class="modal-overlay hidden">
+    <div class="modal-content modal-content-sm glass">
+      <div class="modal-header">
+        <h2><i data-lucide="alert-triangle" class="warning-icon"></i> Cambio de Contraseña</h2>
+      </div>
+      <form id="reason-form" class="modal-form">
+        <p>Has modificado la contraseña. Para mantener la trazabilidad e historial, por favor ingresa el motivo del cambio:</p>
+        <div class="input-group">
+          <input type="text" id="change-reason-input" placeholder="Ej. Cambio periódico, vulnerabilidad, mantenimiento..." maxlength="100" required autocomplete="off">
+        </div>
+        <div class="modal-footer">
+          <button type="submit" id="btn-confirm-reason" class="btn btn-primary btn-full">
+            Registrar cambio y Guardar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIRMACIÓN DE ELIMINACIÓN / RESET -->
+  <div id="confirm-modal" class="modal-overlay hidden">
+    <div class="modal-content modal-content-sm glass">
+      <div class="modal-header">
+        <h2 id="confirm-modal-title">Confirmar Acción</h2>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-modal-message">¿Estás seguro de que deseas realizar esta acción?</p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-confirm-cancel" class="btn btn-secondary">Cancelar</button>
+        <button id="btn-confirm-accept" class="btn btn-danger">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ADMINISTRAR ESPACIOS DE TRABAJO -->
+  <div id="workspaces-modal" class="modal-overlay hidden">
+    <div class="modal-content modal-content-sm glass">
+      <div class="modal-header">
+        <h2>Gestionar Espacios</h2>
+        <button id="btn-close-workspaces-modal" class="icon-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <form id="workspace-form" style="padding: 0; max-height: none; display: flex; flex-direction: column; margin-bottom: 0;">
+          <div class="input-group" style="margin-bottom: 0;">
+            <label for="new-workspace-name">Nuevo Espacio de Trabajo</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="new-workspace-name" placeholder="Ej. Trabajo, Personal, Cliente A" maxlength="24" required autocomplete="off" style="flex-grow: 1;">
+              <button id="btn-add-workspace" class="btn btn-primary" type="submit" style="padding: 0 16px;">
+                <i data-lucide="plus"></i>
+              </button>
+            </div>
+          </div>
+        </form>
+        <hr class="divider" style="margin: 15px 0;">
+        <label style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 8px;">Espacios Existentes</label>
+        <div id="workspaces-list" class="workspaces-list-container" style="display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; padding-right: 4px;">
+          <!-- Filas de workspaces dinámicas -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: GESTIONAR CATEGORÍAS -->
+  <div id="categories-modal" class="modal-overlay hidden">
+    <div class="modal-content glass" style="max-width: 480px;">
+      <div class="modal-header">
+        <h2 id="categories-modal-title">Gestionar Categorías</h2>
+        <button id="btn-close-categories-modal" class="icon-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 20px; max-height: 80vh; overflow-y: auto;">
+        <form id="category-form" style="padding: 0; margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px; max-height: none; overflow: visible;">
+          <input type="hidden" id="form-category-id">
+          
+          <div class="input-group" style="margin-bottom: 0;">
+            <label for="new-category-name" id="category-form-label">Nueva Categoría</label>
+            <input type="text" id="new-category-name" placeholder="Ej. Finanzas, API Keys, VPNs" maxlength="24" required autocomplete="off">
+          </div>
+          
+          <div class="input-group" style="margin-bottom: 0;">
+            <label>Elegir Icono</label>
+            <div id="category-icon-selector" class="icon-grid-selector">
+              <!-- Grid generado por JS -->
+            </div>
+          </div>
+          
+          <div class="input-group" style="margin-bottom: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label style="margin-bottom: 0;">Elegir Color</label>
+              <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted);">
+                <label for="category-custom-color" style="cursor: pointer; font-size: 12px; margin-bottom: 0;">Personalizado:</label>
+                <input type="color" id="category-custom-color" value="#2563eb" style="border: none; background: none; width: 24px; height: 24px; cursor: pointer; padding: 0; border-radius: 4px; outline: none;">
+              </div>
+            </div>
+            <div id="category-color-selector" class="color-grid-selector">
+              <!-- Grid generado por JS -->
+            </div>
+          </div>
+          
+          <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px;">
+            <button type="button" id="btn-cancel-category-edit" class="btn btn-secondary btn-sm hidden" style="padding: 8px 12px; font-size: 12px; height: 32px;">Cancelar Edición</button>
+            <button id="btn-save-category" class="btn btn-primary btn-sm" type="submit" style="padding: 8px 14px; font-size: 12px; height: 32px;">
+              <i data-lucide="plus"></i> <span id="btn-save-category-text">Agregar Categoría</span>
+            </button>
+          </div>
+        </form>
+        
+        <hr class="divider" style="margin: 15px 0;">
+        
+        <label style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); display: block; margin-bottom: 8px;">Categorías Creadas</label>
+        <div id="categories-list" class="categories-list-container">
+          <!-- Dinámico -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIRMACIÓN DE ELIMINACIÓN DE CATEGORÍA CON CUENTAS -->
+  <div id="delete-category-confirm-modal" class="modal-overlay hidden">
+    <div class="modal-content modal-content-sm glass" style="max-width: 420px;">
+      <div class="modal-header">
+        <h2>Eliminar Categoría</h2>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <p id="delete-category-msg" style="margin-bottom: 16px; line-height: 1.5; font-size: 13.5px; color: var(--text-main);"></p>
+        
+        <div class="input-group" style="margin-bottom: 16px;">
+          <label style="font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">¿Qué deseas hacer con las cuentas asociadas?</label>
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 4px;">
+            <label class="checkbox-container" style="font-size: 13.5px; padding-left: 28px; color: var(--text-main);">
+              <input type="radio" name="delete-category-action" value="transfer" checked>
+              <span class="checkmark" style="border-radius: 50%;"></span>
+              Transferir cuentas a otra categoría
+            </label>
+            <label class="checkbox-container" style="font-size: 13.5px; padding-left: 28px; color: var(--danger-hover);">
+              <input type="radio" name="delete-category-action" value="delete">
+              <span class="checkmark" style="border-radius: 50%;"></span>
+              Eliminar todas las cuentas asociadas
+            </label>
+          </div>
+        </div>
+        
+        <div class="input-group" id="delete-category-transfer-group" style="margin-bottom: 20px;">
+          <label for="delete-category-transfer-select">Selecciona la categoría de destino</label>
+          <select id="delete-category-transfer-select">
+            <!-- Dinámico -->
+          </select>
+        </div>
+        
+        <div class="modal-footer" style="padding: 0; border: none; margin-top: 20px; display: flex; justify-content: flex-end; gap: 12px;">
+          <button id="btn-cancel-delete-category" class="btn btn-secondary btn-sm" type="button" style="padding: 8px 12px; font-size: 12px; height: 32px;">Cancelar</button>
+          <button id="btn-confirm-delete-category" class="btn btn-danger btn-sm" type="button" style="padding: 8px 12px; font-size: 12px; height: 32px;">Eliminar Categoría</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CONFIGURACIÓN DE USUARIO (PANEL DE PERFIL) -->
+  <div id="user-panel-modal" class="modal-overlay hidden">
+    <div class="modal-content glass" style="max-width: 480px;">
+      <div class="modal-header">
+        <h2>Configuración de Cuenta</h2>
+        <button id="btn-close-user-panel" class="icon-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 20px; max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column; gap: 20px;">
+        
+        <!-- SECCIÓN 1: CAMBIAR NOMBRE DE USUARIO -->
+        <div class="profile-section-block">
+          <h3 style="font-size: 14px; color: var(--primary-hover); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="user" style="width: 16px; height: 16px;"></i> Cambiar Nombre de Usuario
+          </h3>
+          <form id="change-username-form" style="display: flex; flex-direction: column; gap: 10px;">
+            <div class="input-group" style="margin-bottom: 0;">
+              <label for="new-profile-username">Nuevo Nombre de Usuario</label>
+              <input type="text" id="new-profile-username" placeholder="Mínimo 3 caracteres alfanuméricos" maxlength="15" pattern="^[a-zA-Z0-9_-]{3,15}$" required autocomplete="off">
+            </div>
+            <button type="submit" class="btn btn-primary btn-full" style="align-self: flex-end; padding: 8px 16px; font-size: 12px; height: 32px; width: auto; margin-top: 4px;">
+              Actualizar Usuario
+            </button>
+          </form>
+        </div>
+
+        <hr class="divider" style="margin: 0;">
+
+        <!-- SECCIÓN 2: CAMBIAR CONTRASEÑA MAESTRA -->
+        <div class="profile-section-block">
+          <h3 style="font-size: 14px; color: var(--primary-hover); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="key-round" style="width: 16px; height: 16px;"></i> Cambiar Contraseña Maestra
+          </h3>
+          <form id="change-password-form" style="display: flex; flex-direction: column; gap: 12px;">
+            <div class="input-group" style="margin-bottom: 0;">
+              <label for="current-master-password">Contraseña Maestra Actual</label>
+              <div class="password-wrapper">
+                <input type="password" id="current-master-password" placeholder="Ingresa tu contraseña actual" required autocomplete="current-password">
+                <button type="button" id="toggle-current-password" class="icon-btn">
+                  <i data-lucide="eye"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="input-group" style="margin-bottom: 0;">
+              <label for="new-master-password">Nueva Contraseña Maestra</label>
+              <div class="password-wrapper">
+                <input type="password" id="new-master-password" placeholder="Mínimo 8 caracteres" required minlength="8" autocomplete="new-password">
+                <button type="button" id="toggle-new-password" class="icon-btn has-generator">
+                  <i data-lucide="eye"></i>
+                </button>
+                <button type="button" id="btn-toggle-user-generator" class="btn btn-secondary btn-icon-only tooltip" title="Generar Contraseña Maestra" style="height: 44px; width: 44px;">
+                  <i data-lucide="wand-2"></i>
+                </button>
+              </div>
+              <div id="user-strength-bar" class="strength-bar"><div></div></div>
+              <span id="user-strength-text" class="strength-text">Fuerza de contraseña</span>
+
+              <!-- GENERADOR DE CONTRASEÑA MAESTRA INTEGRADO (Sección Colapsable) -->
+              <div id="user-generator-panel" class="generator-panel hidden" style="margin-top: 12px; margin-bottom: 4px;">
+                <h4 style="font-size: 11px;">Generador de Contraseña</h4>
+                <div class="gen-output-group" style="padding: 6px 12px; min-height: 38px;">
+                  <span id="user-gen-password-preview" class="password-font" style="font-size: 13px;">Contraseña Generada</span>
+                  <div class="gen-output-actions">
+                    <button type="button" id="btn-user-regenerate-password" class="icon-btn tooltip" title="Generar otra" style="padding: 4px;">
+                      <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+                    </button>
+                    <button type="button" id="btn-user-use-gen-password" class="btn btn-success btn-sm" style="padding: 4px 10px; font-size: 11px; height: 26px;">
+                      Aplicar
+                    </button>
+                  </div>
+                </div>
+                <div class="gen-controls" style="gap: 8px;">
+                  <div class="gen-range-group">
+                    <label for="user-gen-length" style="font-size: 11px;">Longitud: <span id="user-gen-length-val">16</span> caracteres</label>
+                    <input type="range" id="user-gen-length" min="8" max="32" value="16">
+                  </div>
+                  <div class="gen-checkbox-grid" style="grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <label class="checkbox-container" style="font-size: 11px; margin-bottom: 0;">
+                      <input type="checkbox" id="user-gen-upper" checked>
+                      <span class="checkmark" style="width: 16px; height: 16px;"></span>
+                      Mayúsculas
+                    </label>
+                    <label class="checkbox-container" style="font-size: 11px; margin-bottom: 0;">
+                      <input type="checkbox" id="user-gen-lower" checked>
+                      <span class="checkmark" style="width: 16px; height: 16px;"></span>
+                      Minúsculas
+                    </label>
+                    <label class="checkbox-container" style="font-size: 11px; margin-bottom: 0;">
+                      <input type="checkbox" id="user-gen-numbers" checked>
+                      <span class="checkmark" style="width: 16px; height: 16px;"></span>
+                      Números
+                    </label>
+                    <label class="checkbox-container" style="font-size: 11px; margin-bottom: 0;">
+                      <input type="checkbox" id="user-gen-symbols" checked>
+                      <span class="checkmark" style="width: 16px; height: 16px;"></span>
+                      Símbolos
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="input-group" style="margin-bottom: 0;">
+              <label for="new-master-password-confirm">Confirmar Nueva Contraseña Maestra</label>
+              <input type="password" id="new-master-password-confirm" placeholder="Repite la nueva contraseña" required autocomplete="new-password">
+            </div>
+
+            <button type="submit" class="btn btn-success btn-full" style="align-self: flex-end; padding: 8px 16px; font-size: 12px; height: 32px; width: auto; margin-top: 4px;">
+              Actualizar Contraseña
+            </button>
+          </form>
+        </div>
+
+        <hr class="divider" style="margin: 0;">
+
+        <!-- SECCIÓN 3: VER CLAVE DE RECUPERACIÓN -->
+        <div class="profile-section-block" style="margin-bottom: 10px;">
+          <h3 style="font-size: 14px; color: var(--primary-hover); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="shield-alert" style="width: 16px; height: 16px;"></i> Clave de Emergencia
+          </h3>
+          <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 12px;">
+            En caso de olvidar tu contraseña, necesitarás tu Clave de Emergencia. Si no la respaldaste al registrarte, puedes consultarla ingresando tu contraseña maestra actual:
+          </p>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div id="reveal-recovery-verify-group" style="display: flex; gap: 8px;">
+              <input type="password" id="reveal-recovery-password-input" placeholder="Confirma tu contraseña maestra actual" style="flex-grow: 1; padding: 8px 12px; font-size: 13.5px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--bg-input); color: var(--text-main); outline: none;">
+              <button type="button" id="btn-reveal-recovery" class="btn btn-primary" style="padding: 0 16px; font-size: 12px; height: 36px; border-radius: 8px;">
+                Revelar
+              </button>
+            </div>
+            
+            <div id="revealed-recovery-key-wrapper" class="field-value-group hidden" style="background-color: var(--bg-input); border: 1px solid var(--success); justify-content: center; padding: 10px; min-height: 44px; margin-top: 4px;">
+              <span id="revealed-recovery-key-text" class="password-font" style="font-size: 13.5px; font-weight: 600; color: var(--text-main); letter-spacing: 0.05em; user-select: all;">ZENT-XXXX-XXXX-XXXX-XXXX</span>
+              <button type="button" id="btn-copy-revealed-recovery" class="icon-btn tooltip" title="Copiar Clave" style="margin-left: 8px; padding: 4px;">
+                <i data-lucide="copy" style="color: var(--success); width: 14px; height: 14px;"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Script Controlador Principal -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

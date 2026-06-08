@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; connect-src 'none'; img-src 'self' data:; frame-src 'none'; object-src 'none';">
+  <title>Zentry One - Suite de Pruebas de Seguridad</title>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #0b0f19;
+      color: #e2e8f0;
+      padding: 40px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #818cf8;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 15px;
+    }
+    .test-case {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .test-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .test-name {
+      font-weight: 600;
+      font-size: 16px;
+    }
+    .badge {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-pass {
+      background-color: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+    .badge-fail {
+      background-color: rgba(244, 63, 94, 0.15);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.2);
+    }
+    pre {
+      background-color: #030712;
+      padding: 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      border: 1px solid #111827;
+    }
+    .result-summary {
+      font-size: 18px;
+      font-weight: bold;
+      margin-top: 30px;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .summary-pass {
+      background-color: rgba(16, 185, 129, 0.1);
+      border: 1px solid #10b981;
+      color: #34d399;
+    }
+  </style>
+</head>
+<body>
+  <h1>Zentry One - Suite de Pruebas de Hardening y Seguridad</h1>
+  <p>Esta suite ejecuta pruebas automáticas en el cliente para verificar la efectividad de las mitigaciones de seguridad implementadas.</p>
+  
+  <div id="test-results">Efectuando pruebas...</div>
+  <div id="test-summary"></div>
+
+  <script type="module">
+    import { Storage } from './storage.js';
+    import { encryptData, decryptData } from './crypto.js';
+
+    async function runTests() {
+      const resultsDiv = document.getElementById('test-results');
+      resultsDiv.innerHTML = '';
+      let passedAll = true;
+      let totalTests = 0;
+      let passedTests = 0;
+
+      function assert(condition, message) {
+        totalTests++;
+        if (condition) {
+          passedTests++;
+          return { status: 'PASS', class: 'badge-pass' };
+        } else {
+          passedAll = false;
+          return { status: 'FAIL', class: 'badge-fail' };
+        }
+      }
+
+      function appendResult(name, detail, result) {
+        const div = document.createElement('div');
+        div.className = 'test-case';
+        div.innerHTML = `
+          <div class="test-header">
+            <span class="test-name">${name}</span>
+            <span class="badge ${result.class}">${result.status}</span>
+          </div>
+          <pre>${detail}</pre>
+        `;
+        resultsDiv.appendChild(div);
+      }
+
+      // --- PRUEBA 1: Sanitización de Categorías y Sanitización XSS ---
+      try {
+        const dirtyPayload = {
+          categories: [
+            {
+              id: 'cat_evil',
+              name: '<script>' + '</' + 'script>Cat',
+              icon: '"><img src=x onerror=alert("xss")>',
+              color: 'rgba(0,0,0,1); background: red;'
+            }
+          ]
+        };
+
+        const clean = Storage.validateAndSanitizeVault(dirtyPayload);
+        const cat = clean.categories[0];
+
+        const r1 = assert(
+          cat.name === '<script>' + '</' + 'script>Cat' && // El nombre se mantiene porque se escapa al renderizar
+          cat.icon === 'folder' && // Icono no válido por regex -> fallback a 'folder'
+          cat.color === 'hsl(215, 15%, 60%)', // Color no válido por regex -> fallback a gris por defecto
+          'Sanitización de XSS en Categorías'
+        );
+
+        appendResult(
+          '1. Sanitización de XSS y Inyección en Categorías',
+          `Payload Sucio:\n${JSON.stringify(dirtyPayload.categories[0], null, 2)}\n\nPayload Saneado:\n${JSON.stringify(cat, null, 2)}`,
+          r1
+        );
+      } catch (e) {
+        appendResult('1. Sanitización de XSS y Inyección en Categorías', e.message, { status: 'FAIL', class: 'badge-fail' });
+        passedAll = false;
+      }
+
+      // --- PRUEBA 2: Límites de Caracteres en Cuentas y Notas ---
+      try {
+        const longName = 'A'.repeat(100); // Límite es 50
+        const longNotes = 'B'.repeat(1500); // Límite es 1000
+        const dirtyPayload = {
+          accounts: [
+            {
+              id: 'acc_test',
+              name: longName,
+              notes: longNotes,
+              username: 'admin',
+              password: '123'
+            }
+          ]
+        };
+
+        const clean = Storage.validateAndSanitizeVault(dirtyPayload);
+        const acc = clean.accounts[0];
+
+        const r2 = assert(
+          acc.name.length === 50 &&
+          acc.notes.length === 1000,
+          'Límites de caracteres en Cuentas'
+        );
+
+        appendResult(
+          '2. Límites de Caracteres y Truncamiento Seguro',
+          `Nombre original: 100 chars -> Saneado: ${acc.name.length} chars\nNotas originales: 1500 chars -> Saneado: ${acc.notes.length} chars`,
+          r2
+        );
+      } catch (e) {
+        appendResult('2. Límites de Caracteres y Truncamiento Seguro', e.message, { status: 'FAIL', class: 'badge-fail' });
+        passedAll = false;
+      }
+
+      // --- PRUEBA 3: PBKDF2 Cifrado/Descifrado y Retrocompatibilidad ---
+      try {
+        const testText = 'Clave Secreta';
+        const password = 'MasterPassword123';
+
+        // 1. Cifrar con la nueva configuración por defecto (600,000 iteraciones)
+        const newPayload = await encryptData(testText, password);
+        
+        // 2. Descifrar el nuevo payload indicando sus iteraciones
+        const decryptedNew = await decryptData(newPayload.ciphertext, newPayload.salt, newPayload.iv, password, newPayload.iterations);
+
+        // 3. Descifrar un payload heredado simulado sin campo iteraciones (debe fallbackear a 100,000 iteraciones)
+        // Ciframos explícitamente a 100k
+        const legacyPayload = await encryptData(testText, password, 100000);
+        // Desciframos sin pasar iteraciones (debe usar 100k por defecto)
+        const decryptedLegacy = await decryptData(legacyPayload.ciphertext, legacyPayload.salt, legacyPayload.iv, password);
+
+        const r3 = assert(
+          newPayload.iterations === 600000 &&
+          decryptedNew === testText &&
+          decryptedLegacy === testText,
+          'Criptografía PBKDF2 con iteraciones dinámicas'
+        );
+
+        appendResult(
+          '3. Verificación de Iteraciones PBKDF2 y Compatibilidad',
+          `Iteraciones por defecto (Nuevo usuario): ${newPayload.iterations}\nDescifrado con 600k: ${decryptedNew === testText ? 'OK' : 'ERROR'}\nDescifrado Legacy (Fallback 100k): ${decryptedLegacy === testText ? 'OK' : 'ERROR'}`,
+          r3
+        );
+      } catch (e) {
+        appendResult('3. Verificación de Iteraciones PBKDF2 y Compatibilidad', e.message, { status: 'FAIL', class: 'badge-fail' });
+        passedAll = false;
+      }
+
+      // --- PRUEBA 4: Intentar una conexión externa (CSP Connect-Src None) ---
+      try {
+        let fetchBlocked = false;
+        try {
+          await fetch('https://httpbin.org/get', { mode: 'cors' });
+        } catch (e) {
+          // El navegador lanza error por violación de CSP
+          fetchBlocked = true;
+        }
+
+        const r4 = assert(
+          fetchBlocked,
+          'Bloqueo CSP de llamadas externas'
+        );
+
+        appendResult(
+          '4. Verificación de Content Security Policy (connect-src none)',
+          `Intento de fetch a httpbin.org bloqueado por el navegador: ${fetchBlocked ? 'SÍ (Seguro)' : 'NO (Vulnerable)'}`,
+          r4
+        );
+      } catch (e) {
+        appendResult('4. Verificación de Content Security Policy (connect-src none)', e.message, { status: 'FAIL', class: 'badge-fail' });
+        passedAll = false;
+      }
+
+      // Mostrar resumen
+      const summaryDiv = document.getElementById('test-summary');
+      if (passedAll) {
+        summaryDiv.innerHTML = `
+          <div class="result-summary summary-pass">
+            ¡TODAS LAS PRUEBAS SUPERADAS EXCELENTEMENTE! (${passedTests}/${totalTests} pruebas pasadas)
+            <br><span style="font-size: 14px; font-weight: normal;">La plataforma Zentry One es ahora segura contra inyecciones XSS y exfiltración de datos.</span>
+          </div>
+        `;
+      } else {
+        summaryDiv.innerHTML = `
+          <div class="result-summary" style="background-color: rgba(244, 63, 94, 0.1); border: 1px solid #f43f5e; color: #fb7185;">
+            FALLARON ALGUNAS PRUEBAS (${passedTests}/${totalTests} pruebas pasadas). Por favor revisa la consola y el código.
+          </div>
+        `;
+      }
+    }
+
+    runTests();
+  </script>
+</body>
+</html>
