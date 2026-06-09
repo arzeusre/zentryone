@@ -1434,6 +1434,7 @@ hr.divider {
     border-bottom: 1px solid var(--border-color);
     height: auto;
     overflow: visible;
+    min-height: auto; /* Restablecer min-height en móvil para evitar colapso y traslape */
   }
   
   .sidebar-nav {
