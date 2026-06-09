@@ -540,7 +540,8 @@ hr.divider {
   display: flex;
   flex-direction: column;
   z-index: 10;
-  overflow-y: auto; /* Scroll vertical general si la pantalla es corta */
+  overflow: hidden; /* Evitar que toda la sidebar se desplace */
+  min-height: 0;
 }
 
 .sidebar-header {
@@ -573,7 +574,8 @@ hr.divider {
 .sidebar-nav {
   padding: 24px 16px;
   flex-grow: 1;
-  overflow-y: visible; /* Evitar scrollbars anidados */
+  overflow-y: auto; /* Permitir scroll solo en la navegación */
+  min-height: 0;
 }
 
 .nav-section-title {
@@ -672,6 +674,7 @@ hr.divider {
   display: flex;
   flex-direction: column;
   background-color: var(--bg-accounts);
+  min-height: 0;
 }
 
 .accounts-header {
@@ -822,6 +825,7 @@ hr.divider {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  min-height: 0;
 }
 
 .details-empty-state {
@@ -2230,6 +2234,28 @@ hr.divider {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* CLASES PARA EL ORDENAMIENTO POR ARRASTRE (DRAG AND DROP) */
+.dragging {
+  opacity: 0.4;
+  border: 1px dashed var(--primary) !important;
+}
+
+.account-card.drag-over-above {
+  border-top: 2px solid var(--primary) !important;
+}
+
+.account-card.drag-over-below {
+  border-bottom: 2px solid var(--primary) !important;
+}
+
+#category-filters li.drag-over-above {
+  border-top: 2px solid var(--primary) !important;
+}
+
+#category-filters li.drag-over-below {
+  border-bottom: 2px solid var(--primary) !important;
 }
 
 

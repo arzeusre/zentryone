@@ -24,6 +24,11 @@ let selectedCategoryColor = '';
 // Variable temporal para guardar los datos del formulario mientras se solicita el motivo
 let pendingAccountSaveData = null;
 
+// Variables de ordenamiento por arrastre (drag-and-drop)
+let draggedAccountId = null;
+let draggedCategoryId = null;
+let draggedElement = null;
+
 // ELEMENTOS DOM
 const dom = {
   // Contenedores principales
@@ -745,6 +750,69 @@ function refreshAccountsList() {
         <i data-lucide="${catInfo.icon}" style="width: 14px; height: 14px; color: ${catInfo.color};"></i>
       </div>
     `;
+
+    card.setAttribute('draggable', 'true');
+
+    card.addEventListener('dragstart', (e) => {
+      draggedAccountId = account.id;
+      draggedElement = card;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', account.id);
+    });
+
+    card.addEventListener('dragover', (e) => {
+      if (draggedAccountId === null || draggedAccountId === account.id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      const rect = card.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      const isBelow = relativeY > rect.height / 2;
+
+      card.classList.remove('drag-over-above', 'drag-over-below');
+      if (isBelow) {
+        card.classList.add('drag-over-below');
+      } else {
+        card.classList.add('drag-over-above');
+      }
+    });
+
+    card.addEventListener('dragleave', () => {
+      card.classList.remove('drag-over-above', 'drag-over-below');
+    });
+
+    card.addEventListener('drop', (e) => {
+      if (draggedAccountId === null || draggedAccountId === account.id) return;
+      e.preventDefault();
+
+      const insertBelow = card.classList.contains('drag-over-below');
+      card.classList.remove('drag-over-above', 'drag-over-below');
+
+      const draggedIndex = vault.accounts.findIndex(acc => acc.id === draggedAccountId);
+      if (draggedIndex === -1) return;
+
+      const draggedItem = vault.accounts.splice(draggedIndex, 1)[0];
+      
+      // Encontrar el nuevo índice del target después de remover el draggedItem
+      let targetIndex = vault.accounts.findIndex(acc => acc.id === account.id);
+      if (targetIndex !== -1) {
+        if (insertBelow) {
+          vault.accounts.splice(targetIndex + 1, 0, draggedItem);
+        } else {
+          vault.accounts.splice(targetIndex, 0, draggedItem);
+        }
+        
+        saveAndRefreshVault();
+      }
+    });
+
+    card.addEventListener('dragend', () => {
+      clearDragOverClasses();
+      if (draggedElement) draggedElement.classList.remove('dragging');
+      draggedAccountId = null;
+      draggedElement = null;
+    });
 
     card.addEventListener('click', () => {
       selectAccount(account.id);
@@ -2321,6 +2389,72 @@ function renderCategoriesSidebar() {
       <span>${escapeHtml(cat.name)}</span>
       <span class="badge" id="badge-${cat.id}">0</span>
     `;
+
+    li.setAttribute('draggable', 'true');
+
+    li.addEventListener('dragstart', (e) => {
+      draggedCategoryId = cat.id;
+      draggedElement = li;
+      li.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', cat.id);
+    });
+
+    li.addEventListener('dragover', (e) => {
+      if (draggedCategoryId === null || draggedCategoryId === cat.id) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      const rect = li.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      const isBelow = relativeY > rect.height / 2;
+
+      li.classList.remove('drag-over-above', 'drag-over-below');
+      if (isBelow) {
+        li.classList.add('drag-over-below');
+      } else {
+        li.classList.add('drag-over-above');
+      }
+    });
+
+    li.addEventListener('dragleave', () => {
+      li.classList.remove('drag-over-above', 'drag-over-below');
+    });
+
+    li.addEventListener('drop', (e) => {
+      if (draggedCategoryId === null || draggedCategoryId === cat.id) return;
+      e.preventDefault();
+
+      const insertBelow = li.classList.contains('drag-over-below');
+      li.classList.remove('drag-over-above', 'drag-over-below');
+
+      const draggedIndex = vault.categories.findIndex(c => c.id === draggedCategoryId);
+      if (draggedIndex === -1) return;
+
+      const draggedItem = vault.categories.splice(draggedIndex, 1)[0];
+      
+      let targetIndex = vault.categories.findIndex(c => c.id === cat.id);
+      if (targetIndex !== -1) {
+        if (insertBelow) {
+          vault.categories.splice(targetIndex + 1, 0, draggedItem);
+        } else {
+          vault.categories.splice(targetIndex, 0, draggedItem);
+        }
+        
+        saveAndRefreshVault();
+        updateCategoryDropdowns();
+        renderCategoriesSidebar();
+        renderCategoriesList();
+      }
+    });
+
+    li.addEventListener('dragend', () => {
+      clearDragOverClasses();
+      if (draggedElement) draggedElement.classList.remove('dragging');
+      draggedCategoryId = null;
+      draggedElement = null;
+    });
+
     filtersUl.appendChild(li);
   });
 
@@ -3605,4 +3739,9 @@ function getNewestHistoryTimestamp(account) {
     }
   });
   return newest;
+}
+
+function clearDragOverClasses() {
+  document.querySelectorAll('.drag-over-above').forEach(el => el.classList.remove('drag-over-above'));
+  document.querySelectorAll('.drag-over-below').forEach(el => el.classList.remove('drag-over-below'));
 }
