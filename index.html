@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; connect-src 'none'; img-src 'self' data:; frame-src 'none'; object-src 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com https://accounts.google.com/gsi/client 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src https://fonts.gstatic.com; connect-src https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; object-src 'none';">
   <title>Zentry One - Gestor de Credenciales Seguro</title>
   <!-- Google Fonts: Inter para UI, JetBrains Mono para contraseñas -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,6 +11,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <!-- Lucide Icons CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Identity Services SDK -->
+  <script async defer src="https://accounts.google.com/gsi/client"></script>
   <!-- Hoja de Estilo Principal -->
   <link rel="stylesheet" href="style.css">
 </head>
@@ -71,6 +73,12 @@
         <div style="display: flex; justify-content: space-between; margin-top: 20px; font-size: 13px;">
           <button type="button" id="btn-go-to-register" class="btn-text" style="color: var(--primary-hover); font-weight: 500;">Crear cuenta nueva</button>
           <button type="button" id="btn-go-to-recovery" class="btn-text" style="color: var(--text-muted);">¿Olvidaste tu contraseña?</button>
+        </div>
+        <div style="margin-top: 16px; border-top: 1px dashed var(--border-color); padding-top: 16px; text-align: center;">
+          <button type="button" id="btn-restore-cloud-trigger" class="btn btn-secondary btn-full" style="display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px;">
+            <i data-lucide="cloud-download" style="width: 16px; height: 16px;"></i>
+            Restaurar desde Google Drive
+          </button>
         </div>
       </div>
 
@@ -291,7 +299,7 @@
           </div>
           <div class="profile-details">
             <span class="profile-username" id="active-username-display">Usuario</span>
-            <span class="profile-role">Sesión Local</span>
+            <span class="profile-role" id="active-user-role-display">Sesión Local</span>
           </div>
         </div>
         <button id="btn-user-panel" class="icon-btn tooltip" title="Configurar Perfil">
@@ -921,6 +929,138 @@
               </button>
             </div>
           </div>
+        </div>
+
+        <hr class="divider" style="margin: 0;">
+
+        <!-- SECCIÓN 4: SINCRONIZACIÓN EN LA NUBE (GOOGLE DRIVE) -->
+        <div class="profile-section-block" style="margin-bottom: 10px;">
+          <h3 style="font-size: 14px; color: var(--primary-hover); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="cloud" style="width: 16px; height: 16px;"></i> Sincronización (Google Drive)
+          </h3>
+          <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 12px;">
+            Vincula tu cuenta personal de Google Drive para guardar tu bóveda cifrada en la nube y acceder a ella desde otros dispositivos de forma segura.
+          </p>
+          
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Estado actual de la vinculación -->
+            <div id="sync-status-card" class="field-value-group" style="padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); background-color: var(--bg-card); display: flex; flex-direction: column; gap: 6px; align-items: flex-start; justify-content: center; height: auto; min-height: 0;">
+              <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500;">
+                <span id="sync-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background-color: var(--text-muted);"></span>
+                <span id="sync-status-text">No Vinculado</span>
+              </div>
+              <div id="sync-last-time" style="font-size: 11px; color: var(--text-muted);">
+                Última sincronización: Nunca
+              </div>
+            </div>
+
+            <!-- Entrada de Client ID -->
+            <div class="input-group" style="margin-bottom: 0;">
+              <label for="sync-client-id">Google Client ID</label>
+              <input type="text" id="sync-client-id" placeholder="Ingresa tu Client ID de Google" style="font-size: 12px;">
+            </div>
+
+            <!-- Botones de Acción de Vinculación -->
+            <div style="display: flex; gap: 8px;">
+              <button type="button" id="btn-sync-link" class="btn btn-primary" style="flex-grow: 1; padding: 0 12px; font-size: 12px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <i data-lucide="link"></i> Vincular Drive
+              </button>
+              <button type="button" id="btn-sync-unlink" class="btn btn-danger hidden" style="flex-grow: 1; padding: 0 12px; font-size: 12px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <i data-lucide="link-2"></i> Desvincular
+              </button>
+            </div>
+
+            <!-- Opciones Avanzadas (Solo visibles si está vinculado) -->
+            <div id="sync-actions-panel" class="hidden" style="display: flex; flex-direction: column; gap: 12px; border-top: 1px dashed var(--border-color); padding-top: 12px;">
+              <label class="checkbox-container" style="font-size: 12.5px; margin-bottom: 0;">
+                <input type="checkbox" id="sync-auto-toggle">
+                <span class="checkmark" style="width: 16px; height: 16px;"></span>
+                Sincronización Automática (Auto-Sync)
+              </label>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;">
+                <button type="button" id="btn-sync-push" class="btn btn-secondary" style="font-size: 11.5px; height: 32px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                  <i data-lucide="upload-cloud" style="width: 14px; height: 14px;"></i> Subir (Push)
+                </button>
+                <button type="button" id="btn-sync-pull" class="btn btn-secondary" style="font-size: 11.5px; height: 32px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                  <i data-lucide="download-cloud" style="width: 14px; height: 14px;"></i> Descargar (Pull)
+                </button>
+              </div>
+              <button type="button" id="btn-sync-merge" class="btn btn-success" style="font-size: 12px; height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;">
+                <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i> Combinar Datos (Merge)
+              </button>
+            </div>
+
+            <!-- Enlace Plegable de Ayuda -->
+            <details style="font-size: 11.5px; color: var(--text-muted); cursor: pointer; padding: 4px 0;">
+              <summary style="font-weight: 500; color: var(--primary-hover); outline: none;">¿Cómo obtener mi Google Client ID gratis?</summary>
+              <ol style="margin-top: 6px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.4;">
+                <li>Ve a <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--primary-hover); text-decoration: underline;">Google Cloud Console</a> y crea un proyecto.</li>
+                <li>En <strong>Biblioteca de APIs</strong>, busca y activa la <strong>Google Drive API</strong>.</li>
+                <li>Configura la <strong>Pantalla de consentimiento OAuth</strong> (OAuth consent screen) como <i>Externo</i> y agrega tu correo en "Usuarios de prueba".</li>
+                <li>Ve a <strong>Credenciales</strong>, haz clic en <i>Crear credenciales</i> y elige <i>ID de cliente de OAuth</i> (Tipo de aplicación: <i>Aplicación web</i>).</li>
+                <li>En <strong>Orígenes de JavaScript autorizados</strong> añade: <code>https://arzeusre.github.io</code> (y/o <code>http://localhost:8000</code> para pruebas locales).</li>
+                <li>Copia el <strong>ID de cliente</strong> generado (termina en <code>.apps.googleusercontent.com</code>) y pégalo arriba. ¡No necesitas clave secreta!</li>
+              </ol>
+            </details>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: RESTAURAR DESDE LA NUBE -->
+  <div id="restore-cloud-modal" class="modal-overlay hidden">
+    <div class="modal-content glass" style="max-width: 440px;">
+      <div class="modal-header">
+        <h2>Restaurar desde Google Drive</h2>
+        <button id="btn-close-restore-cloud" class="icon-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+        <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.5;">
+          Si ya tienes una copia de seguridad en Google Drive, puedes descargarla para habilitar el inicio de sesión en este dispositivo.
+        </p>
+
+        <!-- PASO 1: Ingresar Client ID -->
+        <div id="restore-step-1" class="restore-step">
+          <div class="input-group" style="margin-bottom: 12px;">
+            <label for="restore-client-id">Google Client ID</label>
+            <input type="text" id="restore-client-id" placeholder="Ingresa tu Google Client ID" required style="font-size: 12px;">
+          </div>
+          <button type="button" id="btn-restore-connect" class="btn btn-primary btn-full">
+            <i data-lucide="log-in"></i> Conectar con Google
+          </button>
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px; line-height: 1.4;">
+            ¿No tienes un Client ID? Cierra esta ventana, ve a un dispositivo ya vinculado, o consulta la guía de configuración.
+          </p>
+        </div>
+
+        <!-- PASO 2: Seleccionar bóveda -->
+        <div id="restore-step-2" class="restore-step hidden">
+          <h3 style="font-size: 13px; color: var(--primary-hover); margin-bottom: 8px;">Selecciona tu cuenta a restaurar:</h3>
+          <div id="restore-vaults-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 180px; overflow-y: auto; padding: 4px; border: 1px solid var(--border-color); border-radius: 8px; background-color: var(--bg-input);">
+            <div style="text-align: center; padding: 12px; font-size: 12px; color: var(--text-muted);">Buscando archivos en Drive...</div>
+          </div>
+          <button type="button" id="btn-restore-back" class="btn btn-secondary btn-sm" style="margin-top: 12px;">
+            Volver
+          </button>
+        </div>
+
+        <!-- PASO 3: Éxito -->
+        <div id="restore-step-3" class="restore-step hidden" style="text-align: center; padding: 10px 0;">
+          <div style="color: var(--success); margin-bottom: 12px;">
+            <i data-lucide="check-circle-2" style="width: 48px; height: 48px; margin: 0 auto;"></i>
+          </div>
+          <h3 style="font-size: 15px; font-weight: 600; margin-bottom: 6px;">¡Bóveda Restaurada!</h3>
+          <p style="font-size: 12.5px; color: var(--text-muted); line-height: 1.4; margin-bottom: 16px;">
+            Los datos cifrados se descargaron con éxito. Ya puedes iniciar sesión con tu usuario y contraseña maestra.
+          </p>
+          <button type="button" id="btn-restore-finish" class="btn btn-success btn-full">
+            Ir a Iniciar Sesión
+          </button>
         </div>
 
       </div>

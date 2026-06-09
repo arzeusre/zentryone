@@ -5,6 +5,7 @@
  */
 
 import { Storage } from './storage.js';
+import { GDrive } from './gdrive.js';
 
 // ESTADO GLOBAL EN MEMORIA
 let vault = { accounts: [] };
@@ -214,6 +215,7 @@ const dom = {
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
   setupEventListeners();
+  setupGDriveEventListeners();
   // Crear iconos de Lucide cargados por script CDN
   if (window.lucide) {
     window.lucide.createIcons();
@@ -225,6 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function initApp() {
   resetState();
   initTheme();
+  initGDriveClient();
   
   // Mostrar alerta si hay una base de datos antigua para migrar
   if (Storage.hasLegacyVault()) {
@@ -271,6 +274,9 @@ function resetState() {
   } catch (e) {
     // Ignorar si no se tienen permisos de foco
   }
+
+  // Limpiar token de acceso a la nube
+  GDrive.setAccessToken(null);
 
   // Ocultar tableros
   dom.appContainer.classList.add('hidden');
@@ -334,11 +340,23 @@ function loadAndDisplayVault() {
       
       showToast('Bóveda descifrada y sesión iniciada.', 'success');
 
-      // Mostrar nombre de usuario activo
+      // Mostrar nombre de usuario activo y estado de sincronización
       const activeUser = Storage.getActiveUser();
       const usernameDisplay = document.getElementById('active-username-display');
       if (usernameDisplay && activeUser) {
         usernameDisplay.textContent = activeUser;
+      }
+
+      const roleDisplay = document.getElementById('active-user-role-display');
+      if (roleDisplay && activeUser) {
+        const isLinked = GDrive.isLinked(activeUser);
+        roleDisplay.textContent = isLinked ? 'Drive Sincronizado' : 'Sesión Local';
+        roleDisplay.style.color = isLinked ? 'var(--success)' : 'var(--text-muted)';
+      }
+
+      // Hook para sincronización automática al iniciar sesión
+      if (activeUser && GDrive.isLinked(activeUser) && GDrive.isAutoSyncEnabled(activeUser)) {
+        triggerAutoSyncPullAndMerge(activeUser);
       }
       
       // Cargar selectores
@@ -1300,6 +1318,12 @@ function saveAndRefreshVault() {
       refreshAccountsList();
       updateSidebarBadges();
       renderSecurityDashboard();
+
+      // Sincronización automática al modificar datos
+      const activeUser = Storage.getActiveUser();
+      if (activeUser && GDrive.isLinked(activeUser) && GDrive.isAutoSyncEnabled(activeUser)) {
+        triggerAutoSyncPush(activeUser);
+      }
     })
     .catch(err => {
       showToast('Error al cifrar y guardar los datos: ' + err.message, 'danger');
@@ -2828,6 +2852,11 @@ function setupUserProfileEvents() {
     generatorPanel.classList.add('hidden');
     recoveryWrapper.classList.add('hidden');
     
+    // Actualizar sincronización en la nube en UI
+    if (activeUser) {
+      updateSyncUI(activeUser);
+    }
+    
     modal.classList.remove('hidden');
   });
 
@@ -3004,4 +3033,576 @@ function setupUserProfileEvents() {
         .catch(() => showToast('Error al copiar.', 'danger'));
     }
   });
+}
+
+// --- INTEGRACIÓN Y AYUDANTES DE GOOGLE DRIVE (SINCRONIZACIÓN EN LA NUBE) ---
+
+function initGDriveClient() {
+  const clientId = GDrive.getClientId();
+  if (clientId) {
+    const activeUser = Storage.getActiveUser();
+    GDrive.init(clientId, (token) => {
+      console.log("Auto-Init: Token de Google obtenido.");
+      if (activeUser) {
+        updateSyncUI(activeUser);
+      }
+    });
+  }
+}
+
+function updateSyncUI(username) {
+  const isLinked = GDrive.isLinked(username);
+  const clientId = GDrive.getClientId();
+  
+  const syncClientId = document.getElementById('sync-client-id');
+  const syncStatusDot = document.getElementById('sync-status-dot');
+  const syncStatusText = document.getElementById('sync-status-text');
+  const btnSyncLink = document.getElementById('btn-sync-link');
+  const btnSyncUnlink = document.getElementById('btn-sync-unlink');
+  const syncActionsPanel = document.getElementById('sync-actions-panel');
+  const syncAutoToggle = document.getElementById('sync-auto-toggle');
+  const syncLastTime = document.getElementById('sync-last-time');
+
+  if (syncClientId) syncClientId.value = clientId;
+
+  if (isLinked) {
+    if (syncStatusDot) syncStatusDot.style.backgroundColor = 'var(--success)';
+    if (syncStatusText) syncStatusText.textContent = 'Vinculado a Google Drive';
+    if (btnSyncLink) btnSyncLink.classList.add('hidden');
+    if (btnSyncUnlink) btnSyncUnlink.classList.remove('hidden');
+    if (syncActionsPanel) syncActionsPanel.classList.remove('hidden');
+    
+    const autoSync = GDrive.isAutoSyncEnabled(username);
+    if (syncAutoToggle) syncAutoToggle.checked = autoSync;
+    
+    const lastSync = localStorage.getItem(`zentry_one_gdrive_last_sync_${username}`);
+    if (syncLastTime) {
+      syncLastTime.textContent = lastSync ? `Última sincronización: ${lastSync}` : 'Última sincronización: Nunca';
+    }
+  } else {
+    if (syncStatusDot) syncStatusDot.style.backgroundColor = 'var(--text-muted)';
+    if (syncStatusText) syncStatusText.textContent = 'No Vinculado';
+    if (btnSyncLink) btnSyncLink.classList.remove('hidden');
+    if (btnSyncUnlink) btnSyncUnlink.classList.add('hidden');
+    if (syncActionsPanel) syncActionsPanel.classList.add('hidden');
+  }
+}
+
+function setupGDriveEventListeners() {
+  // 1. Botones del Modal de Perfil (Sincronización)
+  const btnSyncLink = document.getElementById('btn-sync-link');
+  const btnSyncUnlink = document.getElementById('btn-sync-unlink');
+  const syncClientId = document.getElementById('sync-client-id');
+  const syncAutoToggle = document.getElementById('sync-auto-toggle');
+  const btnSyncPush = document.getElementById('btn-sync-push');
+  const btnSyncPull = document.getElementById('btn-sync-pull');
+  const btnSyncMerge = document.getElementById('btn-sync-merge');
+
+  // Vincular cuenta
+  if (btnSyncLink) {
+    btnSyncLink.addEventListener('click', async () => {
+      const clientId = syncClientId.value.trim();
+      const user = Storage.getActiveUser();
+      if (!clientId) {
+        showToast('Por favor ingresa un Google Client ID válido.', 'danger');
+        return;
+      }
+      if (!user) return;
+
+      GDrive.saveClientId(clientId);
+      showToast('Autenticando con Google...', 'info');
+
+      try {
+        const success = GDrive.init(clientId);
+        if (!success) throw new Error("No se pudo cargar el cliente de Google.");
+        
+        const token = await GDrive.authenticate();
+        GDrive.setLinked(user, true);
+        GDrive.setAutoSyncEnabled(user, true); // Activar por defecto
+
+        showToast('Buscando bóvedas existentes en Drive...', 'info');
+        const file = await GDrive.findFile(user, token);
+        if (file) {
+          GDrive.saveFileId(user, file.id);
+          await executeCloudMerge(user, token, file.id);
+          showToast('Google Drive vinculado. Se fusionaron tus datos locales y de la nube.', 'success');
+        } else {
+          await executeCloudPush(user, token);
+          showToast('Google Drive vinculado. Bóveda inicial creada en la nube.', 'success');
+        }
+        
+        // Actualizar UI
+        updateSyncUI(user);
+        loadAndDisplayVault();
+      } catch (err) {
+        showToast('Error al vincular Google Drive: ' + err.message, 'danger');
+        GDrive.setLinked(user, false);
+        updateSyncUI(user);
+      }
+    });
+  }
+
+  // Desvincular cuenta
+  if (btnSyncUnlink) {
+    btnSyncUnlink.addEventListener('click', () => {
+      const user = Storage.getActiveUser();
+      if (!user) return;
+      openConfirmModal(
+        'Desvincular Google Drive',
+        '¿Estás seguro de que deseas desvincular Google Drive? Se detendrá la sincronización automática, pero tu bóveda local no se borrará.',
+        () => {
+          GDrive.setLinked(user, false);
+          updateSyncUI(user);
+          
+          const roleDisplay = document.getElementById('active-user-role-display');
+          if (roleDisplay) {
+            roleDisplay.textContent = 'Sesión Local';
+            roleDisplay.style.color = 'var(--text-muted)';
+          }
+          
+          showToast('Google Drive desvinculado.', 'info');
+        }
+      );
+    });
+  }
+
+  // Activar/desactivar auto-sync
+  if (syncAutoToggle) {
+    syncAutoToggle.addEventListener('change', () => {
+      const user = Storage.getActiveUser();
+      if (!user) return;
+      const enabled = syncAutoToggle.checked;
+      GDrive.setAutoSyncEnabled(user, enabled);
+      showToast(enabled ? 'Sincronización automática activada.' : 'Sincronización automática desactivada.', 'info');
+    });
+  }
+
+  // Push manual
+  if (btnSyncPush) {
+    btnSyncPush.addEventListener('click', async () => {
+      const user = Storage.getActiveUser();
+      if (!user) return;
+      btnSyncPush.disabled = true;
+      showToast('Subiendo bóveda a Google Drive...', 'info');
+      try {
+        await GDrive.executeWithRetry(async (token) => {
+          await executeCloudPush(user, token);
+        });
+        showToast('Bóveda local subida con éxito.', 'success');
+        updateSyncUI(user);
+      } catch (err) {
+        showToast('Error al subir bóveda: ' + err.message, 'danger');
+      } finally {
+        btnSyncPush.disabled = false;
+      }
+    });
+  }
+
+  // Pull manual
+  if (btnSyncPull) {
+    btnSyncPull.addEventListener('click', () => {
+      const user = Storage.getActiveUser();
+      if (!user) return;
+      
+      openConfirmModal(
+        'Descargar desde la Nube',
+        'Esta acción sobrescribirá todos tus datos locales con la versión de Google Drive. Los datos locales que no hayan sido respaldados se perderán. ¿Continuar?',
+        async () => {
+          btnSyncPull.disabled = true;
+          showToast('Descargando bóveda...', 'info');
+          try {
+            await GDrive.executeWithRetry(async (token) => {
+              const fileId = GDrive.getFileId(user) || (await GDrive.findFile(user, token))?.id;
+              if (!fileId) throw new Error("No se encontró bóveda en la nube para descargar.");
+              GDrive.saveFileId(user, fileId);
+              await executeCloudPull(user, token, fileId);
+            });
+            showToast('Bóveda descargada con éxito.', 'success');
+            loadAndDisplayVault();
+            updateSyncUI(user);
+          } catch (err) {
+            showToast('Error al descargar: ' + err.message, 'danger');
+          } finally {
+            btnSyncPull.disabled = false;
+          }
+        }
+      );
+    });
+  }
+
+  // Merge manual
+  if (btnSyncMerge) {
+    btnSyncMerge.addEventListener('click', async () => {
+      const user = Storage.getActiveUser();
+      if (!user) return;
+      btnSyncMerge.disabled = true;
+      showToast('Combinando datos local y nube...', 'info');
+      try {
+        await GDrive.executeWithRetry(async (token) => {
+          const fileId = GDrive.getFileId(user) || (await GDrive.findFile(user, token))?.id;
+          await executeCloudMerge(user, token, fileId);
+        });
+        showToast('Sincronización por fusión completada.', 'success');
+        loadAndDisplayVault();
+        updateSyncUI(user);
+      } catch (err) {
+        showToast('Error al combinar datos: ' + err.message, 'danger');
+      } finally {
+        btnSyncMerge.disabled = false;
+      }
+    });
+  }
+
+  // 2. Eventos de Restauración en Pantalla de Login (Dispositivo Nuevo)
+  const btnRestoreCloudTrigger = document.getElementById('btn-restore-cloud-trigger');
+  const restoreCloudModal = document.getElementById('restore-cloud-modal');
+  const btnCloseRestoreCloud = document.getElementById('btn-close-restore-cloud');
+  const restoreStep1 = document.getElementById('restore-step-1');
+  const restoreStep2 = document.getElementById('restore-step-2');
+  const restoreStep3 = document.getElementById('restore-step-3');
+  const restoreClientId = document.getElementById('restore-client-id');
+  const btnRestoreConnect = document.getElementById('btn-restore-connect');
+  const restoreVaultsList = document.getElementById('restore-vaults-list');
+  const btnRestoreBack = document.getElementById('btn-restore-back');
+  const btnRestoreFinish = document.getElementById('btn-restore-finish');
+
+  let restoreToken = null;
+
+  if (btnRestoreCloudTrigger) {
+    btnRestoreCloudTrigger.addEventListener('click', () => {
+      const savedClientId = GDrive.getClientId();
+      if (restoreClientId) restoreClientId.value = savedClientId;
+
+      if (restoreStep1) restoreStep1.classList.remove('hidden');
+      if (restoreStep2) restoreStep2.classList.add('hidden');
+      if (restoreStep3) restoreStep3.classList.add('hidden');
+      
+      if (restoreCloudModal) restoreCloudModal.classList.remove('hidden');
+    });
+  }
+
+  if (btnCloseRestoreCloud) {
+    btnCloseRestoreCloud.addEventListener('click', () => {
+      if (restoreCloudModal) restoreCloudModal.classList.add('hidden');
+    });
+  }
+
+  if (btnRestoreConnect) {
+    btnRestoreConnect.addEventListener('click', async () => {
+      const clientId = restoreClientId.value.trim();
+      if (!clientId) {
+        showToast('Ingresa un Google Client ID válido.', 'danger');
+        return;
+      }
+      GDrive.saveClientId(clientId);
+      btnRestoreConnect.disabled = true;
+      showToast('Conectando con Google...', 'info');
+
+      try {
+        const success = GDrive.init(clientId);
+        if (!success) throw new Error("No se pudo cargar la API de Google.");
+        
+        restoreToken = await GDrive.authenticate();
+        showToast('Buscando copias de seguridad...', 'info');
+
+        const files = await GDrive.listAllVaultFiles(restoreToken);
+        if (files.length === 0) {
+          showToast('No se encontraron copias de seguridad en esta cuenta.', 'warning');
+          btnRestoreConnect.disabled = false;
+          return;
+        }
+
+        if (restoreVaultsList) {
+          restoreVaultsList.innerHTML = '';
+          files.forEach(file => {
+            const match = file.name.match(/zentryone_vault_(.+)\.json/);
+            const user = match ? match[1] : 'Usuario desconocido';
+            const dateStr = new Date(file.modifiedTime).toLocaleString();
+
+            const item = document.createElement('div');
+            item.className = 'vault-list-item';
+            item.style.cssText = 'padding: 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; display: flex; flex-direction: column; gap: 4px; transition: background-color 0.2s;';
+            item.innerHTML = `
+              <div style="font-weight: 600; font-size: 13px; color: var(--text-main);">${user}</div>
+              <div style="font-size: 10.5px; color: var(--text-muted);">Modificado: ${dateStr}</div>
+            `;
+            
+            item.onmouseover = () => item.style.backgroundColor = 'var(--bg-hover)';
+            item.onmouseout = () => item.style.backgroundColor = '';
+
+            item.addEventListener('click', async () => {
+              showToast(`Descargando bóveda de ${user}...`, 'info');
+              try {
+                const bundle = await GDrive.downloadFile(file.id, restoreToken);
+                restoreVaultBundle(bundle);
+                GDrive.setLinked(user, true);
+                GDrive.saveFileId(user, file.id);
+                GDrive.setAutoSyncEnabled(user, true);
+
+                if (restoreStep2) restoreStep2.classList.add('hidden');
+                if (restoreStep3) restoreStep3.classList.remove('hidden');
+              } catch (ex) {
+                showToast('Error al restaurar: ' + ex.message, 'danger');
+              }
+            });
+
+            restoreVaultsList.appendChild(item);
+          });
+        }
+
+        if (restoreStep1) restoreStep1.classList.add('hidden');
+        if (restoreStep2) restoreStep2.classList.remove('hidden');
+      } catch (err) {
+        showToast('Error de conexión: ' + err.message, 'danger');
+      } finally {
+        btnRestoreConnect.disabled = false;
+      }
+    });
+  }
+
+  if (btnRestoreBack) {
+    btnRestoreBack.addEventListener('click', () => {
+      if (restoreStep2) restoreStep2.classList.add('hidden');
+      if (restoreStep1) restoreStep1.classList.remove('hidden');
+    });
+  }
+
+  if (btnRestoreFinish) {
+    btnRestoreFinish.addEventListener('click', () => {
+      if (restoreCloudModal) restoreCloudModal.classList.add('hidden');
+      initApp();
+    });
+  }
+}
+
+function getVaultBundle(username) {
+  const normalized = username.toLowerCase().trim();
+  return {
+    username: normalized,
+    master: JSON.parse(localStorage.getItem(`zentry_one_vault_key_${normalized}_master`)),
+    recovery: JSON.parse(localStorage.getItem(`zentry_one_vault_key_${normalized}_recovery`)),
+    recovery_wrapped: JSON.parse(localStorage.getItem(`zentry_one_recovery_wrapped_${normalized}`)),
+    vault: JSON.parse(localStorage.getItem(`zentry_one_vault_${normalized}`)),
+    lastUpdated: new Date().toISOString()
+  };
+}
+
+function restoreVaultBundle(bundle) {
+  const normalized = bundle.username.toLowerCase().trim();
+  localStorage.setItem(`zentry_one_vault_key_${normalized}_master`, JSON.stringify(bundle.master));
+  localStorage.setItem(`zentry_one_vault_key_${normalized}_recovery`, JSON.stringify(bundle.recovery));
+  localStorage.setItem(`zentry_one_recovery_wrapped_${normalized}`, JSON.stringify(bundle.recovery_wrapped));
+  localStorage.setItem(`zentry_one_vault_${normalized}`, JSON.stringify(bundle.vault));
+  Storage.addUser(normalized);
+}
+
+async function executeCloudPush(username, token) {
+  const bundle = getVaultBundle(username);
+  let fileId = GDrive.getFileId(username);
+
+  if (!fileId) {
+    const file = await GDrive.findFile(username, token);
+    if (file) {
+      fileId = file.id;
+      GDrive.saveFileId(username, fileId);
+    }
+  }
+
+  if (fileId) {
+    await GDrive.updateFileContent(fileId, bundle, token);
+  } else {
+    const newId = await GDrive.createFile(username, bundle, token);
+    GDrive.saveFileId(username, newId);
+  }
+
+  localStorage.setItem(`zentry_one_gdrive_last_sync_${username}`, new Date().toLocaleString());
+}
+
+async function executeCloudPull(username, token, fileId) {
+  const bundle = await GDrive.downloadFile(fileId, token);
+  restoreVaultBundle(bundle);
+  localStorage.setItem(`zentry_one_gdrive_last_sync_${username}`, new Date().toLocaleString());
+}
+
+async function executeCloudMerge(username, token, fileId) {
+  if (!fileId) {
+    await executeCloudPush(username, token);
+    return;
+  }
+
+  const cloudBundle = await GDrive.downloadFile(fileId, token);
+  if (!cloudBundle || !cloudBundle.vault) return;
+
+  const tempKey = `zentry_one_vault_${username}`;
+  const originalLocalPayload = localStorage.getItem(tempKey);
+
+  let decryptedCloudVault = { accounts: [], categories: [], workspaces: [] };
+  try {
+    localStorage.setItem(tempKey, JSON.stringify(cloudBundle.vault));
+    decryptedCloudVault = await Storage.loadVault();
+  } catch (err) {
+    console.error("Error al descifrar bóveda de la nube para fusionar:", err);
+  } finally {
+    if (originalLocalPayload) {
+      localStorage.setItem(tempKey, originalLocalPayload);
+    } else {
+      localStorage.removeItem(tempKey);
+    }
+  }
+
+  const localVault = vault;
+  const mergedVault = mergeVaults(localVault, decryptedCloudVault);
+
+  const localCount = localVault.accounts ? localVault.accounts.length : 0;
+  const mergedCount = mergedVault.accounts ? mergedVault.accounts.length : 0;
+  
+  vault = mergedVault;
+  await Storage.saveVault(vault);
+  
+  const newBundle = getVaultBundle(username);
+  await GDrive.updateFileContent(fileId, newBundle, token);
+
+  if (mergedCount !== localCount) {
+    refreshAccountsList();
+    updateSidebarBadges();
+    renderSecurityDashboard();
+    showToast(`Bóveda sincronizada con éxito (${mergedCount - localCount} cuentas nuevas importadas).`, 'success');
+  }
+}
+
+async function triggerAutoSyncPullAndMerge(username) {
+  const roleDisplay = document.getElementById('active-user-role-display');
+  if (roleDisplay) {
+    roleDisplay.textContent = 'Sincronizando...';
+    roleDisplay.style.color = 'var(--primary-glow)';
+  }
+
+  try {
+    let fileId = GDrive.getFileId(username);
+    await GDrive.executeWithRetry(async (token) => {
+      if (!fileId) {
+        const file = await GDrive.findFile(username, token);
+        if (file) {
+          fileId = file.id;
+          GDrive.saveFileId(username, fileId);
+        }
+      }
+      
+      if (fileId) {
+        await executeCloudMerge(username, token, fileId);
+      } else {
+        await executeCloudPush(username, token);
+      }
+    });
+
+    if (roleDisplay) {
+      roleDisplay.textContent = 'Drive Sincronizado';
+      roleDisplay.style.color = 'var(--success)';
+    }
+    localStorage.setItem(`zentry_one_gdrive_last_sync_${username}`, new Date().toLocaleString());
+  } catch (err) {
+    console.error("Error en sincronización automática inicial:", err);
+    if (roleDisplay) {
+      roleDisplay.textContent = 'Sesión Local';
+      roleDisplay.style.color = 'var(--text-muted)';
+    }
+  }
+}
+
+let isSyncing = false;
+let pendingSyncUser = null;
+
+async function triggerAutoSyncPush(username) {
+  if (isSyncing) {
+    pendingSyncUser = username;
+    return;
+  }
+
+  isSyncing = true;
+  const roleDisplay = document.getElementById('active-user-role-display');
+  if (roleDisplay) {
+    roleDisplay.textContent = 'Sincronizando...';
+    roleDisplay.style.color = 'var(--primary-glow)';
+  }
+
+  try {
+    await GDrive.executeWithRetry(async (token) => {
+      await executeCloudPush(username, token);
+    });
+    
+    if (roleDisplay) {
+      roleDisplay.textContent = 'Drive Sincronizado';
+      roleDisplay.style.color = 'var(--success)';
+    }
+    localStorage.setItem(`zentry_one_gdrive_last_sync_${username}`, new Date().toLocaleString());
+  } catch (err) {
+    console.error("Error en sincronización automática al guardar:", err);
+    if (roleDisplay) {
+      roleDisplay.textContent = 'Sesión Local (Pendiente)';
+      roleDisplay.style.color = 'var(--danger)';
+    }
+  } finally {
+    isSyncing = false;
+    if (pendingSyncUser) {
+      const nextUser = pendingSyncUser;
+      pendingSyncUser = null;
+      triggerAutoSyncPush(nextUser);
+    }
+  }
+}
+
+function mergeVaults(local, cloud) {
+  const merged = {
+    workspaces: local.workspaces ? [...local.workspaces] : [{ id: 'default', name: 'General' }],
+    categories: local.categories ? [...local.categories] : [],
+    accounts: local.accounts ? [...local.accounts] : []
+  };
+
+  if (cloud.workspaces && Array.isArray(cloud.workspaces)) {
+    cloud.workspaces.forEach(cWs => {
+      if (cWs && cWs.id && !merged.workspaces.some(lWs => lWs.id === cWs.id)) {
+        merged.workspaces.push(cWs);
+      }
+    });
+  }
+
+  if (cloud.categories && Array.isArray(cloud.categories)) {
+    cloud.categories.forEach(cCg => {
+      if (cCg && cCg.id && !merged.categories.some(lCg => lCg.id === cCg.id)) {
+        merged.categories.push(cCg);
+      }
+    });
+  }
+
+  if (cloud.accounts && Array.isArray(cloud.accounts)) {
+    cloud.accounts.forEach(cAc => {
+      if (!cAc || !cAc.id) return;
+      const existingIdx = merged.accounts.findIndex(lAc => lAc.id === cAc.id);
+      if (existingIdx === -1) {
+        merged.accounts.push(cAc);
+      } else {
+        const localTime = getNewestHistoryTimestamp(merged.accounts[existingIdx]);
+        const cloudTime = getNewestHistoryTimestamp(cAc);
+        if (cloudTime > localTime) {
+          merged.accounts[existingIdx] = cAc;
+        }
+      }
+    });
+  }
+
+  return merged;
+}
+
+function getNewestHistoryTimestamp(account) {
+  if (!account || !account.history || !Array.isArray(account.history) || account.history.length === 0) return 0;
+  let newest = 0;
+  account.history.forEach(h => {
+    if (h && h.timestamp) {
+      const t = new Date(h.timestamp).getTime();
+      if (!isNaN(t) && t > newest) {
+        newest = t;
+      }
+    }
+  });
+  return newest;
 }
