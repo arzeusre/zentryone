@@ -110,3 +110,4 @@ Hemos resuelto los problemas de scroll y desbordamiento en listas largas y agreg
    * Las categorías personalizadas listadas en el sidebar ahora son arrastrables.
    * La categoría fija **"Todas las Cuentas"** está excluida de ser arrastrable o recibir soltados para mantener la consistencia de la interfaz.
    * La inserción utiliza la misma lógica e indicadores visuales que la de cuentas, actualizando el orden en `vault.categories` y guardándolo instantáneamente.
+
