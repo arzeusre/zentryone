@@ -43,6 +43,18 @@ El proyecto implementa una etiqueta meta CSP restrictiva que impide por completo
 
 ---
 
+## ☁️ Sincronización en la Nube (Google Drive)
+
+Zentry One permite la sincronización automática de credenciales entre múltiples dispositivos (como tu PC y tu teléfono celular) utilizando tu cuenta de **Google Drive**.
+
+*   **Seguridad Zero-Knowledge:** Los datos se cifran localmente en tu navegador antes de subirse. Google solo almacena datos cifrados indescifrables.
+*   **Privacidad:** La aplicación solicita acceso exclusivo mediante el permiso `drive.file` (solo lee/escribe el archivo que ella misma crea). No tiene acceso a ningún otro archivo en tu nube.
+*   **Fusión Inteligente (Merge):** Algoritmo integrado para combinar de forma segura las credenciales de diferentes dispositivos sin sobrescribir ni perder datos.
+
+Para configurar tu cuenta de sincronización y obtener tu Google Client ID gratuito, consulta la [Guía de Uso y Sincronización con Google Drive](./GUIA_SINCRONIZACION.md).
+
+---
+
 ## 📂 Estructura de Archivos
 
 *   `index.html`: Estructura y maquetación de las vistas (Pantalla de desbloqueo, Dashboard de Auditoría, Detalle de Cuentas y Modales).
@@ -50,7 +62,9 @@ El proyecto implementa una etiqueta meta CSP restrictiva que impide por completo
 *   `app.js`: Controlador principal de UI, validaciones de formularios y gestión de eventos de la aplicación.
 *   `storage.js`: Capa de datos que implementa las operaciones de carga, guardado, renombrado y saneamiento del LocalStorage.
 *   `crypto.js`: Envoltura de funciones de cifrado, descifrado y derivación de claves usando la API nativa **Web Crypto API**.
+*   `gdrive.js`: Módulo de comunicación directa con la API de Google Drive v3 y autenticación con Google Identity Services.
 *   `test_security.html`: Suite integrada de pruebas automatizadas de seguridad en el cliente.
+*   `GUIA_SINCRONIZACION.md`: Guía detallada paso a paso para configurar la nube de Google y realizar la sincronización/restauración de cuentas.
 
 ---
 

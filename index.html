@@ -206,7 +206,7 @@
         </div>
         
         <div class="field-value-group" style="margin-bottom: 20px; background-color: var(--bg-input); border: 1px solid var(--success); justify-content: center; padding: 12px; min-height: 48px;">
-          <span id="generated-recovery-key-text" class="password-font" style="font-size: 14px; font-weight: 600; color: #fff; letter-spacing: 0.05em; user-select: all;">ZENT-XXXX-XXXX-XXXX-XXXX</span>
+          <span id="generated-recovery-key-text" class="password-font" style="font-size: 14px; font-weight: 600; color: var(--text-main); letter-spacing: 0.05em; user-select: all;">ZENT-XXXX-XXXX-XXXX-XXXX</span>
           <button type="button" id="btn-copy-generated-recovery-key" class="icon-btn tooltip" title="Copiar Clave" style="margin-left: 8px;">
             <i data-lucide="copy" style="color: var(--success); width: 16px; height: 16px;"></i>
           </button>
@@ -997,8 +997,8 @@
               <ol style="margin-top: 6px; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.4;">
                 <li>Ve a <a href="https://console.cloud.google.com/" target="_blank" style="color: var(--primary-hover); text-decoration: underline;">Google Cloud Console</a> y crea un proyecto.</li>
                 <li>En <strong>Biblioteca de APIs</strong>, busca y activa la <strong>Google Drive API</strong>.</li>
-                <li>Configura la <strong>Pantalla de consentimiento OAuth</strong> (OAuth consent screen) como <i>Externo</i> y agrega tu correo en "Usuarios de prueba".</li>
-                <li>Ve a <strong>Credenciales</strong>, haz clic en <i>Crear credenciales</i> y elige <i>ID de cliente de OAuth</i> (Tipo de aplicación: <i>Aplicación web</i>).</li>
+                <li>Ve al menú lateral <strong>Público</strong>, configura el tipo de usuario como <i>Externo</i> y, obligatoriamente, agrega tu dirección de correo electrónico en la sección <strong>Usuarios de prueba</strong> (si no lo haces, obtendrás un Error 403: access_denied).</li>
+                <li>Ve a <strong>Clientes</strong> (o <i>Credenciales</i>), crea un nuevo <i>ID de cliente de OAuth</i> (Tipo de aplicación: <i>Aplicación web</i>).</li>
                 <li>En <strong>Orígenes de JavaScript autorizados</strong> añade: <code>https://arzeusre.github.io</code> (y/o <code>http://localhost:8000</code> para pruebas locales).</li>
                 <li>Copia el <strong>ID de cliente</strong> generado (termina en <code>.apps.googleusercontent.com</code>) y pégalo arriba. ¡No necesitas clave secreta!</li>
               </ol>
